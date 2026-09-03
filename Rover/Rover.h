@@ -286,6 +286,9 @@ private:
     void balancebot_pitch_control(float &throttle);
     bool is_balancebot() const;
 
+    // depth_control.cpp
+    void update_depth_control(float target_depth_m);
+    
     // commands.cpp
     bool set_home_to_current_location(bool lock) override WARN_IF_UNUSED;
     bool set_home(const Location& loc, bool lock) override WARN_IF_UNUSED;

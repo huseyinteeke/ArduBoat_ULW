@@ -16,6 +16,24 @@ public:
     static AR_AttitudeControl *get_singleton() { return _singleton; }
 
     //
+    //  pitch controller
+    //
+
+    // return a fin servo output given a desired pitch in radians
+    // set rate_max_rads to a non-zero number to apply a limit on the desired pitch rate
+    // return value is normally in range -1.0 to +1.0
+    float get_fin_out_pitch(float pitch_rad, float rate_max_rads, bool motor_limit_up, bool motor_limit_down, float dt);
+
+    // return a desired pitch-rate given a desired pitch in radians
+    // normally the results are later passed into get_fin_out_rate
+    float get_pitch_rate_from_pitch(float pitch_rad, float rate_max_rads) const;
+
+    // return a fin servo output given a desired pitch rate in radians/sec.
+    // positive rate is pitching up
+    // return value is normally in range -1.0 to +1.0
+    float get_fin_out_rate(float desired_rate, bool motor_limit_up, bool motor_limit_down, float dt);
+
+    //
     // steering controller
     //
 
@@ -98,6 +116,8 @@ public:
     AC_PID& get_steering_rate_pid() { return _steer_rate_pid; }
     AC_PID& get_pitch_to_throttle_pid() { return _pitch_to_throttle_pid; }
     AC_PID& get_sailboat_heel_pid() { return _sailboat_heel_pid; }
+    AC_P& get_pitch_angle_p() { return _pitch_angle_p;}
+    AC_PID& get_pitch_rate_pid() { return _pitch_rate_pid;}
     const AP_PIDInfo& get_throttle_speed_pid_info() const { return _throttle_speed_pid_info; }
 
     // set the PID notch sample rates
@@ -142,7 +162,9 @@ private:
 
     // parameters
     AC_P     _steer_angle_p;        // steering angle controller
+    AC_P     _pitch_angle_p;        // pitch angle controller
     AC_PID   _steer_rate_pid;       // steering rate controller
+    AC_PID   _pitch_rate_pid;       // pitch rate controller
     AC_PID   _throttle_speed_pid;   // throttle speed controller
     AC_PID   _pitch_to_throttle_pid;// balancebot pitch controller
     AP_Float _pitch_to_throttle_ff; // balancebot feed forward from current pitch angle
@@ -179,6 +201,12 @@ private:
     float _pitch_limit_low = 0;     // min desired pitch (in radians) used to protect against falling over
     float _pitch_limit_high = 0;    // max desired pitch (in radians) used to protect against falling over
     bool _pitch_limited = false;    // true if pitch was limited on last call to get_throttle_out_from_pitch
+
+    // pitch control
+    uint32_t _pitch_last_ms;        // system time of last call to pitch rate controller
+    float    _desired_pitch_rate;   // desired pitch rate (in radians/sec)
+    bool     _fin_limit_up;         // true when the fin control has reached its physical/motor up limit
+    bool     _fin_limit_down;       // true when the fin control has reached its physical/motor down limit
 
     // Sailboat heel control
     AC_PID   _sailboat_heel_pid;    // Sailboat heel angle pid controller

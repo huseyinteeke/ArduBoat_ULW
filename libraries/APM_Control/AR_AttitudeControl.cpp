@@ -53,6 +53,14 @@
 #define AR_ATTCONTROL_HEEL_SAIL_FILT    10.0f
 #define AR_ATTCONTROL_DT                0.02f
 
+#define AR_ATTCONTROL_PITCH_ANG_P       2.0f
+#define AR_ATTCONTROL_PITCH_RATE_P      0.2f
+#define AR_ATTCONTROL_PITCH_RATE_I      0.05f
+#define AR_ATTCONTROL_PITCH_RATE_D      0.0f
+#define AR_ATTCONTROL_PITCH_RATE_FF     0.0f
+#define AR_ATTCONTROL_PITCH_RATE_IMAX   1.0f
+#define AR_ATTCONTROL_PITCH_RATE_FILT   10.0f
+
 // throttle/speed control maximum acceleration/deceleration (in m/s) (_ACCEL_MAX parameter default)
 #define AR_ATTCONTROL_THR_ACCEL_MAX     1.00f
 
@@ -573,13 +581,29 @@ const AP_Param::GroupInfo AR_AttitudeControl::var_info[] = {
     // @Units: deg/s/s
     // @User: Standard
     AP_GROUPINFO("_STR_DEC_MAX", 16, AR_AttitudeControl, _steer_decel_max, AR_ATTCONTROL_STEER_DECEL_MAX),
+    
+    // @Param: _PTCH_ANG_P
+    // @DisplayName: Pitch axis angle controller P gain
+    // @Description: Pitch axis angle controller P gain.  Converts the error between the desired pitch angle and actual angle to a desired pitch rate
+    // @Range: 0.1 10.0
+    // @Increment: 0.1
+    // @User: Standard
+    AP_SUBGROUPINFO(_pitch_angle_p, "_PIT_ANG_", 17, AR_AttitudeControl, AC_P),
+
+    // @Param: _PTCH_RAT_
+    // @DisplayName: Pitch axis rate controller gains
+    // @Description: Pitch axis rate controller gains.  Converts the error between desired pitch rate and actual pitch rate into a motor/fin output
+    // @User: Standard
+    AP_SUBGROUPINFO(_pitch_rate_pid, "_PIT_RAT_", 18, AR_AttitudeControl, AC_PID),
 
     AP_GROUPEND
 };
 
 AR_AttitudeControl::AR_AttitudeControl() :
     _steer_angle_p(AR_ATTCONTROL_STEER_ANG_P),
+     _pitch_angle_p(AR_ATTCONTROL_PITCH_ANG_P),
     _steer_rate_pid(AR_ATTCONTROL_STEER_RATE_P, AR_ATTCONTROL_STEER_RATE_I, AR_ATTCONTROL_STEER_RATE_D, AR_ATTCONTROL_STEER_RATE_FF, AR_ATTCONTROL_STEER_RATE_IMAX, 0.0f, AR_ATTCONTROL_STEER_RATE_FILT, 0.0f),
+    _pitch_rate_pid(AR_ATTCONTROL_PITCH_RATE_P, AR_ATTCONTROL_PITCH_RATE_I, AR_ATTCONTROL_PITCH_RATE_D, AR_ATTCONTROL_PITCH_RATE_FF, AR_ATTCONTROL_PITCH_RATE_IMAX, 0.0f, AR_ATTCONTROL_PITCH_RATE_FILT, 0.0f),
     _throttle_speed_pid(AR_ATTCONTROL_THR_SPEED_P, AR_ATTCONTROL_THR_SPEED_I, AR_ATTCONTROL_THR_SPEED_D, 0.0f, AR_ATTCONTROL_THR_SPEED_IMAX, 0.0f, AR_ATTCONTROL_THR_SPEED_FILT, 0.0f),
     _pitch_to_throttle_pid(AR_ATTCONTROL_PITCH_THR_P, AR_ATTCONTROL_PITCH_THR_I, AR_ATTCONTROL_PITCH_THR_D, 0.0f, AR_ATTCONTROL_PITCH_THR_IMAX, 0.0f, AR_ATTCONTROL_PITCH_THR_FILT, 0.0f),
     _sailboat_heel_pid(AR_ATTCONTROL_HEEL_SAIL_P, AR_ATTCONTROL_HEEL_SAIL_I, AR_ATTCONTROL_HEEL_SAIL_D, 0.0f, AR_ATTCONTROL_HEEL_SAIL_IMAX, 0.0f, AR_ATTCONTROL_HEEL_SAIL_FILT, 0.0f)
@@ -1097,4 +1121,46 @@ void AR_AttitudeControl::set_notch_sample_rate(float sample_rate)
     _throttle_speed_pid.set_notch_sample_rate(sample_rate);
     _pitch_to_throttle_pid.set_notch_sample_rate(sample_rate);
 #endif
+}
+
+
+
+
+
+// return a fin servo output given a desired pitch in radians
+// set rate_max_rads to a non-zero number to apply a limit on the desired pitch rate
+// return value is normally in range -1.0 to +1.0
+float AR_AttitudeControl::get_fin_out_pitch(float pitch_rad, float rate_max_rads, bool motor_limit_up, bool motor_limit_down, float dt)
+{
+    const float desired_rate = get_pitch_rate_from_pitch(pitch_rad, rate_max_rads);
+    return get_fin_out_rate(desired_rate, motor_limit_up, motor_limit_down, dt);
+}
+
+// return a desired pitch-rate given a desired pitch in radians
+// normally the results are later passed into get_fin_out_rate
+float AR_AttitudeControl::get_pitch_rate_from_pitch(float pitch_rad, float rate_max_rads) const
+{
+    float current_pitch = AP::ahrs().get_pitch_rad();
+    float pitch_error   = pitch_rad - current_pitch;
+    float target_rate    = _pitch_angle_p.get_p(pitch_error);
+
+    if (is_positive(rate_max_rads)) {
+        target_rate = constrain_float(target_rate, -rate_max_rads, rate_max_rads);
+    }
+    return target_rate;
+}
+
+// return a fin servo output given a desired pitch rate in radians/sec.
+// positive rate is pitching up
+// return value is normally in range -1.0 to +1.0
+float AR_AttitudeControl::get_fin_out_rate(float desired_rate, bool motor_limit_up, bool motor_limit_down, float dt)
+{
+    _pitch_last_ms = AP_HAL::millis();
+    _desired_pitch_rate = desired_rate;
+    bool is_limited = motor_limit_up || motor_limit_down;
+    float current_rate = AP::ahrs().get_gyro().y;
+
+
+    float fin_out = _pitch_rate_pid.update_all(desired_rate , current_rate , dt , is_limited);
+    return constrain_float(fin_out, -1.0f, 1.0f);
 }

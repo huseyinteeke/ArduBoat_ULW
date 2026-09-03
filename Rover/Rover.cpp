@@ -30,6 +30,9 @@
 */
 
 #include "Rover.h"
+#include "AP_AHRS/AP_AHRS.h"
+#include "AP_Scheduler/AP_Scheduler.h"
+#include "SRV_Channel/SRV_Channel.h"
 
 #define FORCE_VERSION_H_INCLUDE
 #include "version.h"
@@ -553,6 +556,20 @@ bool Rover::get_wp_crosstrack_error_m(float &xtrack_error) const
     return true;
 }
 
+
+void Rover::update_depth_control(float target_depth_m)
+{
+
+    static float last_depth_m = 0.0f;
+    AP::ahrs().get_relative_position_D_home(last_depth_m);
+    float depth_error_m = target_depth_m - last_depth_m;
+    float depth_p_gain  = 8.0f;
+    float target_pitch_deg = constrain_float(depth_error_m * depth_p_gain, -30.0f, 30.0f);    
+    float target_pitch_rad = radians(target_pitch_deg);
+    float dt               = AP::scheduler().get_loop_period_s();
+    float pitch_out        = g2.attitude_control.get_fin_out_pitch(target_pitch_rad, 0.0f , false , false , dt); 
+    SRV_Channels::set_output_scaled(SRV_Channel::k_elevator , pitch_out * 4500.0f);
+}
 
 Rover rover;
 AP_Vehicle& vehicle = rover;
